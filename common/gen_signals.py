@@ -78,8 +78,8 @@ import pandas as pd
 from datetime import datetime
 
 def simulated_trade_performance(df, buy_signal_column, sell_signal_column, price_column,
-                                initial_capital=10000, fee_percent=0.1, max_concurrent_trades=10,
-                                stop_loss=0.025, take_profit=0.025, time_limit=32, log_file='trade_log.txt'):
+                                initial_capital=10000, fee_percent=0.1, max_concurrent_trades=5,
+                                stop_loss=0.03, take_profit=0.03, time_limit=32, log_file='trade_log.txt'):
     capital = initial_capital
     position_size = capital / max_concurrent_trades
     trade_fee = fee_percent / 100

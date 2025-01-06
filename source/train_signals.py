@@ -50,9 +50,9 @@ def main(config_file):
 
     print(f"Input data size {len(df)} records loaded.")
     df[time_column] = pd.to_datetime(df[time_column].astype(float) / 1000, unit='s')
-
+    df = df[-34561:-1]
     months_in_simulation = (df[time_column].iloc[-1] - df[time_column].iloc[0]) / timedelta(days=365/12)
-
+    print(f"Months in simulation: {months_in_simulation:.2f} from {df[time_column].iloc[0]} to {df[time_column].iloc[-1]}")
     parameter_grid = train_signal_config.get("grid")
     direction = train_signal_config.get("direction", "")
     if direction not in ['long', 'short', 'both', '']:
@@ -87,7 +87,7 @@ def main(config_file):
         print(f"Buy signal column: {buy_signal_column}")
         print(f"Sell signal column: {sell_signal_column}")
         performance, long_performance, short_performance = simulated_trade_performance(df,  buy_signal_column, sell_signal_column, 'close')
-    
+
         long_performance.pop("transactions", None)
         short_performance.pop("transactions", None)
 
@@ -96,17 +96,17 @@ def main(config_file):
         elif direction == "short":
             performance = short_performance
         
-        performance["profit_percent_per_month"] = performance["profit_percent"] / months_in_simulation
-        performance["transaction_no_per_month"] = performance["transaction_no"] / months_in_simulation
+        performance["profit_percent"] = performance["profit_percent"]
+        performance["transaction"] = performance["transaction_no"]
         performance["profit_percent_per_transaction"] = performance["profit_percent"] / months_in_simulation
-        performance["profit_per_month"] = performance["profit"] / months_in_simulation
+        performance["profit"] = performance["profit"]
 
         performances.append(dict(
             model=parameters,
-            performance={k: performance[k] for k in ['profit_percent_per_month', 'profitable', 'profit_percent_per_transaction', 'transaction_no_per_month']}
+            performance={k: performance[k] for k in ['profit_percent', 'profitable', 'profit_percent_per_transaction', 'transaction_no']}
         ))
 
-    performances = sorted(performances, key=lambda x: x['performance']['profit_percent_per_month'], reverse=True)
+    performances = sorted(performances, key=lambda x: x['performance']['profit_percent'], reverse=True)
     performances = performances[:topn_to_store]
 
     keys = list(performances[0]['model'].keys()) + list(performances[0]['performance'].keys())
