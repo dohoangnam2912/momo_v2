@@ -90,8 +90,10 @@ def merge_data_sources(data_sources: list):
         ds["df"] = df
 
     range_start = min([ds["start"] for ds in data_sources])
-    range_end = min([ds["end"] for ds in data_sources])
+    range_end = min([ds["end"] for ds in data_sources]) 
 
+    print(range_start)
+    print(range_end)
     index = pd.date_range(range_start, range_end, freq=freq)
 
     df_out = pd.DataFrame(index=index)

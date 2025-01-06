@@ -76,7 +76,7 @@ def main(config_file):
         # Downloading using binance client
         klines = App.client.get_historical_klines(symbol=symbol, interval=freq, start_str=latest_point.isoformat())
 
-        df = klines_to_df(klines)
+        df = klines_to_df(klines, df)
 
         df = df.iloc[:-1] # Remove last row because it's incompleted
 

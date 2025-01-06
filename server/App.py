@@ -52,11 +52,12 @@ class App:
         "telegram_chat_id" : "",
 
         # Name file convention, all the processed file names are here
-        "merge_file_name": "merged_data.csv",
-        "feature_file_name": "feature.csv",
-        "matrix_file_name": "matrix.csv",
+        "merge_file_name": "klines.csv",
+        "feature_file_name": "features.csv",
+        "label_file_name": "label.csv",
         "predict_file_name": "predict.csv",
         "signal_file_name": "signal.csv",
+        "signal_models_file_name": "signal_model",
 
         "model_folder": "models",
 

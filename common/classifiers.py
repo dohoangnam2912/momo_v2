@@ -3,20 +3,93 @@ import numpy as np
 import pandas as pd
 from sklearn import metrics
 from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
 import lightgbm as lgbm
+from lightgbm import LGBMClassifier
 import tensorflow as tf
-from tensorflow import keras
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import train_test_split
+from lightgbm import LGBMClassifier, early_stopping, log_evaluation
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import train_test_split
+from bayes_opt import BayesianOptimization
 
-def train_gb(df_X, df_y, model_config:dict):
+# def train_gb(df_X, df_y, model_config: dict):
+#     """
+#     Trains a gradient boosting model using LightGBM.
+#     Args:
+#         df_X (pandas.DataFrame): The input features dataframe.
+#         df_y (pandas.Series): The target variable series.
+#         model_config (dict): The configuration dictionary for the model.
+#     Returns:
+#         tuple: A tuple containing the trained model and the scaler used for feature scaling.
+#     """
+#     print(df_X.columns)
+    
+#     # Handle shifting of features
+#     shifts = model_config.get("train", {}).get("shifts", None)
+#     if shifts:
+#         max_shift = max(shifts)
+#         df_X = double_columns(df_X, shifts)
+#         df_X = df_X.iloc[max_shift:]
+#         df_y = df_y.iloc[max_shift:]
+
+#     # Scaling
+#     is_scale = model_config.get("train", {}).get("is_scale", False)
+#     if is_scale:
+#         scaler = StandardScaler()
+#         scaler.fit(df_X)
+#         X_train = scaler.transform(df_X)
+#     else:
+#         scaler = None
+#         X_train = df_X.values
+
+#     y_train = df_y.values
+
+#     # Split into training and validation sets
+#     X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.2, shuffle=False)
+
+#     # Model parameters with defaults
+#     params = model_config.get("params", {})
+#     lgbm_params = {
+#         'learning_rate': params.get("learning_rate", 0.1),
+#         'objective': params.get("objective", 'binary'),
+#         'max_depth': params.get("max_depth", -1),
+#         'num_leaves': 2**params.get("max_depth", -1) - 1,
+#         'lambda_l1': params.get("lambda_l1", 0.0),
+#         'lambda_l2': params.get("lambda_l2", 0.0),
+#         'scale_pos_weight': len(y_train) / (sum(y_train)),  # Handle imbalance
+#         'n_estimators': params.get("num_boost_round", 100),
+#         'num_boost_round': params.get("num_boost_round", 100),
+#     }
+
+#     # Train the model
+#     train_data = lgbm.Dataset(X_train, label=y_train, feature_name=df_X.columns.tolist())
+#     valid_data = lgbm.Dataset(X_valid, label=y_valid, feature_name=df_X.columns.tolist())
+
+#     model = lgbm.train(
+#         lgbm_params,
+#         train_set=train_data,
+#         valid_sets=[train_data, valid_data],
+#         callbacks=[
+#             lgbm.early_stopping(50),
+#         ]
+#     )
+
+#     return model, scaler
+
+def train_gb(df_X, df_y, model_config: dict):
     """
-    Trains a gradient boosting model using LightGBM.
+    Trains a gradient boosting model using LightGBM with Bayesian Optimization for hyperparameter tuning.
     Args:
         df_X (pandas.DataFrame): The input features dataframe.
         df_y (pandas.Series): The target variable series.
         model_config (dict): The configuration dictionary for the model.
     Returns:
-        tuple: A tuple containing the trained model and the scaler used for feature scaling.
+        tuple: A tuple containing the best model, the scaler used, and the best parameters found.
     """
+
+    # Handle shifting of features
     shifts = model_config.get("train", {}).get("shifts", None)
     if shifts:
         max_shift = max(shifts)
@@ -36,32 +109,75 @@ def train_gb(df_X, df_y, model_config:dict):
 
     y_train = df_y.values
 
-    # Model
-    params = model_config.get("params")
-    objective = params.get("objective")
-    max_depth = params.get("max_depth")
-    learning_rate = params.get("learning_rate")
-    num_boost_round = params.get("num_boost_round")
-    lambda_l1 = params.get("lambda_l1")
-    lambda_l2 = params.get("lambda_l2")
+    # Split into training and validation sets
+    X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.2, shuffle=False)
 
-    lgbm_params = {
-        'learning_rate': learning_rate,
-        'objective': objective,
-        'min_data_in_leaf': int(0.02*len(df_X)),
-        'num_leaves': 32, # TODO: Finetune
-        'lambda_l1': lambda_l1,
-        'lambda_l2': lambda_l2,
-        'is_unbalance': 'true',
-        'boosting_type': 'gdbt',
-        'objective': objective,
-        'metric': {'cross_entropy'},
-        'verbose': 0,
+    # Define the objective function for Bayesian Optimization
+    def objective(learning_rate, max_depth, num_leaves, lambda_l1, lambda_l2):
+        params = {
+            'learning_rate': learning_rate,
+            'objective': 'binary',
+            'max_depth': int(max_depth),
+            'num_leaves': int(num_leaves),
+            'lambda_l1': lambda_l1,
+            'lambda_l2': lambda_l2,
+            'scale_pos_weight': len(y_train) / (sum(y_train)),
+            'n_estimators': 100
         }
-    
-    model = lgbm.train(lgbm_params, lgbm.Dataset(X_train, y_train), num_boost_round=num_boost_round)
 
-    return (model, scaler)
+        # Create datasets
+        train_data = lgbm.Dataset(X_train, label=y_train, feature_name=df_X.columns.tolist())
+        valid_data = lgbm.Dataset(X_valid, label=y_valid, feature_name=df_X.columns.tolist())
+
+        # Train model with these hyperparameters
+        model = lgbm.train(
+            params,
+            train_set=train_data,
+            valid_sets=[train_data, valid_data],
+            callbacks=[lgbm.early_stopping(50)]
+        )
+
+        # Evaluate using validation score (maximize F1 score or minimize log loss)
+        preds = model.predict(X_valid)
+        preds_binary = (preds > 0.5).astype(int)
+        score = -np.mean((y_valid - preds_binary) ** 2)  # Example: Negative MSE as the score to minimize
+        return score
+
+    # Define the bounds for Bayesian Optimization
+    optimizer = BayesianOptimization(
+        f=objective,
+        pbounds={
+            'learning_rate': (0.01, 0.3),
+            'max_depth': (3, 10),
+            'num_leaves': (20, 100),
+            'lambda_l1': (0, 10),
+            'lambda_l2': (0, 10)
+        },
+        random_state=42
+    )
+
+    # Run Bayesian Optimization for 20 iterations
+    optimizer.maximize(init_points=5, n_iter=20)
+
+    # Retrieve the best parameters found
+    best_params = optimizer.max['params']
+    best_params['max_depth'] = int(best_params['max_depth'])
+    best_params['num_leaves'] = int(best_params['num_leaves'])
+
+    # Train the model with the best hyperparameters
+    final_train_data = lgbm.Dataset(X_train, label=y_train, feature_name=df_X.columns.tolist())
+    final_valid_data = lgbm.Dataset(X_valid, label=y_valid, feature_name=df_X.columns.tolist())
+
+    final_model = lgbm.train(
+        best_params,
+        train_set=final_train_data,
+        valid_sets=[final_train_data, final_valid_data],
+        callbacks=[lgbm.early_stopping(50)]
+    )
+
+    print("Best Parameters:", best_params)
+    return final_model, scaler
+
 
 def predict_gb(models: tuple, df_X_test, model_config: dict):
     """
@@ -98,6 +214,7 @@ def predict_gb(models: tuple, df_X_test, model_config: dict):
     sr_ret = df_ret["y_hat"]
 
     return sr_ret
+
 def train_predict_gb(df_X, df_y, df_X_test, model_config: dict):
     """
     Trains a gradient boosting model using the given training data and predicts the target variable for the given test data.
@@ -119,6 +236,8 @@ def train_predict_gb(df_X, df_y, df_X_test, model_config: dict):
     return y_test_hat
 
 #TODO: NN model
+def train_nn():
+    pass
 def predict_nn():
     pass
 
@@ -159,6 +278,27 @@ def compute_scores(y_true, y_hat):
     return scores
 
 def double_columns(df_X, shifts):
+    """
+    Concatenates shifted versions of a DataFrame with the original DataFrame.
+
+    Parameters:
+    - df_X (pandas.DataFrame): The original DataFrame.
+    - shifts (list): A list of integer values representing the number of shifts to apply to the DataFrame.
+
+    Returns:
+    - df_X (pandas.DataFrame): The concatenated DataFrame.
+
+    Example:
+    >>> df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
+    >>> shifts = [1, 2]
+    >>> double_columns(df, shifts)
+       A  B  A_shift_1  B_shift_1  A_shift_2  B_shift_2
+    0  1  4        NaN        NaN        NaN        NaN
+    1  2  5        1.0        4.0        NaN        NaN
+    2  3  6        2.0        5.0        1.0        4.0
+    """
+
+
     if not shifts:
         return df_X
     df_list = [df_X.shift(shift) for shift in shifts]

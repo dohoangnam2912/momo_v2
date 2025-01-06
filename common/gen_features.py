@@ -10,6 +10,15 @@ from common.utils import *
 from common.gen_features_agg import _aggregate_last_rows
 
 def generate_features_tsfresh(df, config:dict, last_rows: int = 0):
+    """
+    Generate time-series features using the tsfresh library.
+    Args:
+        df (pandas.DataFrame): The input dataframe.
+        config (dict): Configuration dictionary containing the columns and windows for feature generation.
+        last_rows (int, optional): Number of last rows to generate features for. Defaults to 0.
+    Returns:
+        list: List of generated feature names.
+    """
     import tsfresh.feature_extraction.feature_calculators as tsf
 
     column_names = config.get('columns')
@@ -18,7 +27,7 @@ def generate_features_tsfresh(df, config:dict, last_rows: int = 0):
     
     if isinstance(column_names, str):
         column_name = column_names
-    elif isinstance(column_names, str):
+    elif isinstance(column_names, list):
         column_name = column_names[0]
     elif isinstance(column_names, dict):
         column_name = next(iter(column_names.values())) #TODO: What is this
@@ -85,6 +94,19 @@ def generate_features_tsfresh(df, config:dict, last_rows: int = 0):
     return features
 
 def generate_features_talib(df, config:dict, last_rows: int = 0):
+    """
+    Generate features using talib library.
+    Args:
+        df (pandas.DataFrame): The input DataFrame.
+        config (dict): Configuration dictionary containing parameters for feature generation.
+        last_rows (int, optional): Number of last rows to consider. Defaults to 0.
+    Returns:
+        list: List of feature names generated.
+    Raises:
+        ValueError: If the columns parameter is not of type string, list, or dict.
+        ValueError: If the talib function name cannot be resolved.
+        ValueError: If the names parameter is not of type string or list.
+    """
 
     relative_base = config.get('parameters', {}).get('relative_base', False)
     relative_function = config.get('parameters', {}).get('relative_function', False)
@@ -119,11 +141,11 @@ def generate_features_talib(df, config:dict, last_rows: int = 0):
     # Data preprocessing
     column_names = config.get('columns')
     if isinstance(column_names, str):
-        column_name = {'real': column_names}
+        column_names = {'real': column_names}
     elif isinstance(column_names, list) and len(column_names) == 1:
-        column_name = {'real': column_names[0]}
+        column_names = {'real': column_names[0]}
     elif isinstance(column_names, list):
-        column_name = {f'real{i}': col for i,col in enumerate(column_names)}
+        column_names = {f'real{i}': col for i,col in enumerate(column_names)}
     elif isinstance(column_names, dict):
         pass
     else:
@@ -163,13 +185,36 @@ def generate_features_talib(df, config:dict, last_rows: int = 0):
                     raise ValueError(f"Can't resolve talib function name '{func_name}'. Check if the function is existed.")
                 
                 args = columns.copy()
+                if func_name in ['ATR']:
+                    args = {
+                        'high': df['high'].interpolate(),
+                        'low': df['low'].interpolate(),
+                        'close': df['close'].interpolate(),
+                        'timeperiod': w
+                    }
+                elif func_name in ['STOCH']:
+                    args = {
+                        'high': df['high'].interpolate(),
+                        'low': df['low'].interpolate(),
+                        'close': df['close'].interpolate(),
+                        'fastk_period': config.get("fask_period", 5),
+                        'slowk_period': config.get("slowk_period", 3),
+                        'slowd_period': config.get("slowd_period", 3)
+                    }
+                elif func_name in ['MACD']:
+                    args = {
+                        'close': df['close'].interpolate(),
+                        'fastperiod': config.get("fast_period", 12),
+                        'slowperiod': config.get("slow_period", 26),
+                        'signalperiod': config.get("signal_period", 9)
+                    }
                 if w:
                     args['timeperiod'] = w
                 if w == 1 and len(columns) == 1 :
                     out = next(iter(columns.values()))
                 else:
                     out = fn(**args)
-            
+
             # Name of the output column
             if not w:
                 if not names:
@@ -194,16 +239,26 @@ def generate_features_talib(df, config:dict, last_rows: int = 0):
                 
             fn_out_names.append(out_name)
 
-            out.name = out_name
+            # if isinstance(out, tuple):
+            #     out = out[0]
+            # out.name = out_name
 
-            fn_outs.append(out)
+            # fn_outs.append(out)
+
+            if isinstance(out, tuple):
+                for i, element in enumerate(out):
+                    element.name = f"{out_name}_{i}"  # Assign a unique name for each element
+                    fn_outs.append(element)
+            else:
+                out.name = out_name
+                fn_outs.append(out)
 
         # Convert to relative values and percentage
         fn_outs = _convert_to_relative(fn_outs, relative_base, relative_function, percentage)
-
         features.extend(fn_out_names)
         outputs.extend(fn_outs)
-    
+        print(outputs)
+
     for output in outputs:
         df[output.name] = np.log(out) if log else out
     
@@ -217,7 +272,7 @@ def _convert_to_relative(fn_outs: list, relative_base, relative_function, percen
             relative_output = fn_outs[i] # No change
         elif (relative_base == "next" or relative_base == "last") and i == size - 1:
             relative_output = fn_outs[i] # No change, because last rows
-        elif (relative_base == "previous" or relative_base == "first") and i == 0:
+        elif (relative_base == "prev" or relative_base == "first") and i == 0:
             relative_output = fn_outs[i] # No change, because first rows
         
         elif relative_base == "next" or relative_base == "last":
@@ -225,6 +280,8 @@ def _convert_to_relative(fn_outs: list, relative_base, relative_function, percen
                 base = fn_outs[i+1]
             elif relative_base == "last":
                 base = fn_outs[size - 1]
+            else:
+                raise ValueError(f"Unknown value of the 'relative_function' config parameter: {relative_function}")
             
             if relative_function == "rel":
                 relative_output = feature / base
@@ -235,11 +292,13 @@ def _convert_to_relative(fn_outs: list, relative_base, relative_function, percen
             else:
                 raise ValueError(f"Unknown value of the 'relative_function' config parameter: {relative_function}")
         
-        elif relative_base == "previous" or relative_base == "first":
+        elif relative_base == "prev" or relative_base == "first":
             if relative_base == "prev":
                 base = fn_outs[i-1]
             elif relative_base == "first":
                 base = fn_outs[0]
+            else:
+                raise ValueError(f"Unknown value of the 'rel_base' config parameter: {relative_base=}")
             
             if relative_function == "rel":
                 relative_output = feature / base
@@ -250,11 +309,11 @@ def _convert_to_relative(fn_outs: list, relative_base, relative_function, percen
             else:
                 raise ValueError(f"Unknown value of the 'relative_function' config parameter: {relative_function}")
 
-        else:
-            raise ValueError(f"Unknown value of the 'relative_base' config parameter: {relative_base}")
         
         if percentage:
-            relative_output = fn_outs[i].name
-            relative_outputs.append(relative_output)
+            relative_output = relative_output * 100.0
+            
+        relative_output.name = fn_outs[i].name
+        relative_outputs.append(relative_output)
         
     return relative_outputs

@@ -21,18 +21,23 @@ def generate_feature_set(df: pd.DataFrame, fs:dict, last_rows: int) -> Tuple[pd.
 
     # Features
     if generator == "tsfresh":
+        print(f"Generating features with {generator}...")
         features = generate_features_tsfresh(f_df, gen_config, last_rows=last_rows)
     elif generator == "talib":
+        print(f"Generating features with {generator}...")
         features = generate_features_talib(f_df, gen_config, last_rows=last_rows)
-
+        print(f"Finished generating features with {generator}. Name of the columns: {features}")
     # Labels
     elif generator == "label":
         f_df, features = generate_labels(f_df, gen_config)
 
-    # TODO:Signals
+    # Signals
     elif generator == "smoothen":
         pass
-    
+    elif generator == "combine":
+        f_df, features = generate_scores(f_df, gen_config)
+    elif generator == "threshold_rule":
+        f_df, features = generate_threshold_rule(f_df, gen_config)
     else:
         generator_fn = resolve_generator_name(generator)
         if generator_fn is None:
@@ -40,6 +45,8 @@ def generate_feature_set(df: pd.DataFrame, fs:dict, last_rows: int) -> Tuple[pd.
 
         f_df, features = generator_fn(f_df, gen_config)
 
+    print(f_df.head())
+    print(features)
     f_df = f_df[features]
     fp = fs.get("feature_prefix")
     if fp:
@@ -126,3 +133,57 @@ def resolve_generator_name(gen_name: str):
         return None
     
     return func
+
+def train(df, fs, config):
+    labels = fs.get("config").get("labels")
+    if not labels:
+        labels = config.get("labels")
+
+    algorithms = fs.get("config").get("functions")
+    if not algorithms:
+        algorithms = fs.get("config").get("algorithms")
+    if not algorithms: # If still not found
+        algorithms = config.get("algorithms")
+    
+    train_features = fs.get("config").get("columns")
+    if not train_features:
+        train_features = fs.get("config").get("features")
+    if not train_features:
+        train_features = config.get("train_features")
+
+    models = dict()
+    scores = dict()
+    out_df = pd.DataFrame()
+
+    for label in labels:
+        for model in algorithms:
+            algo_name = model.get("name")
+            algo_type = model.get("algo")
+            score_column_name = label + label_algo_seperator + algo_name
+            algo_train_length = model.get("train", {}).get("length")
+
+
+            if algo_train_length:
+                train_df = df.tail(algo_train_length)
+            else:
+                train_df = df
+            
+            df_x = train_df[train_features]
+            df_y = train_df[label]
+
+            print(f"Train '{score_column_name}'. Algorithm {algo_name}. Label: {label}. Train length {len(train_df)}. Train columns {len(train_df.columns)}")
+
+            if algo_type == "gb":
+                model_pair = train_gb(df_x, df_y, model)
+                models[score_column_name] = model_pair
+                df_y_hat = predict_gb(model_pair, df_x, model)
+            elif algo_type == "nn":
+                model_pair = train_nn(df_x, df_y, model)
+                models[score_column_name] = model_pair
+                df_y_hat = predict_nn(model_pair, df_x, model)
+            else:
+                raise ValueError(f"Only support LightGBM and Neural Network model. Your current model: {algo_type}")
+            
+            scores[score_column_name] = compute_scores(df_y, df_y_hat)
+            out_df[score_column_name] = df_y_hat
+    return out_df, models, scores

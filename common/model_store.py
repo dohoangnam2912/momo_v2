@@ -11,6 +11,17 @@ Module for storing and loading machine learning models.
 """
 
 def save_model_pair(model_path, score_column_name: str, model_pair: tuple):
+    """
+    Save a model pair consisting of a model and a scaler to the specified model path.
+    Args:
+        model_path (str or Path): The path where the model pair will be saved.
+        score_column_name (str): The name of the score column.
+        model_pair (tuple): A tuple containing the model and scaler to be saved.
+    Raises:
+        None
+    Returns:
+        None
+    """
     if not isinstance(model_path, Path):
         model_path = Path(model_path)
     model_path = model_path.absolute()

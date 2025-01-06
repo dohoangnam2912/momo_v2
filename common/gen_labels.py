@@ -11,25 +11,22 @@ scores, called tolerance will come to play.
 """
 
 def generate_labels(df, config: dict):
+    # code implementation goes here
     init_column_number = len(df.columns)
 
     column_name = config.get('columns')
     if not column_name:
         raise ValueError(f"The 'columns' parameter must not be NULL.")
+    elif isinstance(column_name, list):
+        column_name = column_name[0]
     elif not isinstance(column_name, str):
         raise ValueError(f"The 'columns' parameter must be string. Current type: {type(column_name)}")
     elif column_name not in df.columns:
         raise ValueError(f"{column_name} does not exist in the input data.")
     
-    function = config.get('function')
-    if not isinstance(function, str):
-        raise ValueError(f"The 'function' parameter must be string. Current type: {type(function)}")
-    if function not in ['top', 'bot']:
-        raise ValueError(f"Unknown function name {function}. Only 'top' or 'bot' are possible.")
-
-    tolerances = config.get('tolarance') # Percentage of tolerance
-    if not isinstance(tolerance, list):
-        tolerance = [tolerance]
+    tolerances = config.get('tolerance') # Percentage of tolerance
+    if not isinstance(tolerances, list):
+        tolerances = [tolerances]
 
     level = config.get('level') # Threshold to be consider top/bot
     if function == 'top':
@@ -38,17 +35,17 @@ def generate_labels(df, config: dict):
         level = -abs(level)
     else:
         raise ValueError(f"Level has only 2 options: top, bot")
-    
+
     names = config.get('names') # ['top1_025', 'top1_01']
-    if len(names) != len(tolerance):
+    if len(names) != len(tolerances):
         raise ValueError(f"Label generator has name for each tolerance value")
     
     labels = []
     for i, tolerance in enumerate(tolerances):
         df, new_labels = add_extremum_features(df, column_name=column_name, 
                                                level_fracs=[level], 
-                                               tolerance_frac=abs(level)*tolerance, 
-                                               out_name=names[i:i+1])
+                                               tolerance_frac=tolerance, 
+                                               out_names=names[i:i+1])
         labels.extend(new_labels)
 
     print(f"{len(names)} labels generated: {names}")
@@ -68,49 +65,62 @@ def add_extremum_features(df, column_name: str, level_fracs: list, tolerance_fra
 
         out_name = out_names[i]
         out_column = pd.Series(data=False, index=df.index, dtype=bool, name=out_name)
-
+        print(f"Extremums: {extremums}")
         for extremum in extremums:
-            out_column.loc[extremum[1]:extremum[3]] = True
-        
+            if extremum[1] is not None and extremum[0] is not None:
+                if extremum[1] > extremum[0]:
+                    raise ValueError("Tolerance index can not be larger than value index")
+                out_column.loc[extremum[1]:extremum[0]] = True  
+            if extremum[4] is not None and extremum[3] is not None: 
+                if extremum[4] > extremum[3]:
+                    raise ValueError("Tolerance index can not be larger than value index")
+                out_column.loc[extremum[4]:extremum[3]] = True
         out_columns.append(out_column)
-
+        
     df = pd.concat([df] + out_columns, axis=1)
 
     return df, out_names
 
 def find_all_extremums(sr: pd.Series, is_max: bool, level_frac: float, tolerance_frac: float) -> list:
     extremums = list()
+    index = 0
 
-    intervals = [(sr.index[0], sr.index[-1] + 1)] # All intervals needed to be analyzed to find top/bot
+    offset = 1
+    intervals = [(0, len(sr))]
     while True:
         if not intervals:
             break
         interval = intervals.pop()
-
         extremum = find_one_extremum(sr.loc[interval[0] : interval[1]], is_max, level_frac, tolerance_frac)
         
         if extremum[0] and extremum[-1]: # If found then store to return
             extremums.append(extremum)
-        
         if extremum[0] and interval[0] < extremum[0]:
-            intervals.append((interval[0], extremum[0]))
+            intervals.append((interval[0], extremum[1] - offset if extremum[1] is not None and extremum[1] - offset > interval[0]  else interval[0]))
         if extremum[-1] and extremum[-1] < interval[1]:
-            intervals.append((extremum[-1], interval[1]))
-
+            intervals.append((extremum[-2] + offset if extremum[-2] is not None and extremum[-2] + offset < interval[1] else interval[1], interval[1]))
+        index += 1
     return sorted(extremums, key=lambda x: x[2])
 
 def find_one_extremum(sr: pd.Series, is_max: bool, level_frac: float, tolerance_frac: float) -> tuple:
     if is_max:
+        if len(sr) == 0:
+            return (None, None, None, None, None)
         extr_idx = sr.idxmax()
         extr_val = sr.loc[extr_idx]
         level_val = extr_val * (1 - level_frac)
         tolerance_val = extr_val * (1 - tolerance_frac)
+        # print(f"Max: {extr_idx} -> {extr_val} -> {level_val} -> {tolerance_val}")
 
     else:
+        if len(sr) == 0:
+            return (None, None, None, None, None)
         extr_idx = sr.idxmin()
         extr_val = sr.loc[extr_idx]
         level_val = extr_val / (1 - level_frac)
         tolerance_val = extr_val / (1 - tolerance_frac)
+        # print(f"Min: {extr_idx} -> {extr_val} -> {level_val} -> {tolerance_val}")
+
     
     # Split into 2 sub-intervals to find the left and right ends
     sr_left = sr.loc[:extr_idx]

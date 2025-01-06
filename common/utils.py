@@ -78,3 +78,22 @@ def round_down_str(value, precision):
     precision_factor = Decimal(1) / (Decimal(10) ** precision)  # The smallest step for precision
     rounded_value = Decimal(str(value)).quantize(precision_factor, rounding=ROUND_DOWN)  # Round to precision
     return rounded_value
+
+def find_index(df: pd.DataFrame, date_str: str, column_name: str = "timestamp"):
+    d = dateparser.parse(date_str)
+    try:
+        res = df[df[column_name] == d]
+    except TypeError:
+        if d.tzinfo is None or d.tzinfo.utcoffset(d) is None:
+            d = d.replace(tzinfo=pytz.utc)
+        else:
+            d = d.replace(tzinfo=None)
+        
+        res = df[df[column_name] == d]
+
+    if res is None or len(res) == 0:
+        raise ValueError(f"Cannot find date '{date_str}' i the column {column_name}")
+    
+    id = res.index[0]
+
+    return id

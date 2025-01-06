@@ -11,17 +11,25 @@ def _add_aggregations(df, column_name:str, fn,
                       last_rows: int = 0
                       ):
     """
-    Add moving aggregations over past values.
+        Add aggregations to a DataFrame column.
+        Args:
+            df (DataFrame): The DataFrame to add aggregations to.
+            column_name (str): The name of the column to aggregate.
+            fn (function): The aggregation function to apply.
+            windows (Union[int, List[int]]): The window size(s) for aggregation.
+            suffix (str, optional): The suffix to append to the feature names. Defaults to None.
+            rel_column_name (str, optional): The name of the relative column for normalization. Defaults to None.
+            rel_factor (float, optional): The factor to multiply the normalized feature by. Defaults to 1.0.
+            last_rows (int, optional): The number of last rows to aggregate. Defaults to 0.
+        Returns:
+            list: A list of feature names created by the aggregation.
     """
 
     column = df[column_name]
 
     if isinstance(windows, int):
         windows = [windows]
-
-    if rel_column_name:
-        rel_column = df[rel_column_name]
-    
+ 
     if suffix is None:
         suffix = "_" + fn.__name__
 
@@ -36,10 +44,7 @@ def _add_aggregations(df, column_name:str, fn,
         # Normalize
         feature_name = column_name + suffix + '_' + str(w)
         features.append(feature_name)
-        if rel_column_name:
-            df[feature_name] = rel_factor * (feature - rel_column) / rel_column
-        else:
-            df[feature_name] = rel_factor * feature
+        df[feature_name] = rel_factor * feature
     
     return features
 
@@ -69,9 +74,6 @@ def _add_weighted_aggregations(df,
     if isinstance(windows, int):
         windows = [windows]
     
-    if rel_column_name:
-        rel_column = df[rel_column_name]
-    
     if suffix is None:
         suffix = "_" + fn.__name__
 
@@ -90,15 +92,26 @@ def _add_weighted_aggregations(df,
 
         feature_name = column_name + suffix + '_' + str(w)
         features.append(feature_name)
-        if rel_column_name:
-            df[feature_name] = rel_factor * (feature - rel_column) / rel_column
-        else:
-            df[feature_name] = rel_factor * feature
+        df[feature_name] = rel_factor * feature
 
     return features
 
 def add_area_ratio(df, column_name: str, windows: Union[int, List[int]], suffix=None, last_rows: int = 0):
     """
+    Parameters:
+    - df: DataFrame
+        The input DataFrame.
+    - column_name: str
+        The name of the column to calculate the area ratio for.
+    - windows: int or List[int]
+        The window size(s) to use for calculating the area ratio.
+    - suffix: str, optional
+        The suffix to append to the feature column names. Default is "_area_ratio".
+    - last_rows: int, optional
+        The number of last rows to aggregate. Default is 0.
+    Returns:
+    - features: List
+        A list of calculated area ratio features.
     We take past element and compare the previous sub-series: The are under and over this element
     """
     column = df[column_name]
@@ -118,6 +131,19 @@ def add_area_ratio(df, column_name: str, windows: Union[int, List[int]], suffix=
             feature = _aggregate_last_rows(column, w, last_rows, area_fn)
 
 def area_fn(x):
+    """
+    Calculate the ratio of positive values to the total absolute difference between each element and the last element in the input array.
+
+    Parameters:
+    - x (array-like): Input array.
+
+    Returns:
+    - float: The calculated ratio.
+
+    Example:
+    >>> area_fn([1, 2, 3, 4, 5])
+    0.5
+    """
     level = x[-1]
     x_diff = x - level
     a = np.nansum(x_diff)
@@ -129,7 +155,19 @@ def area_fn(x):
 
 def add_linear_trends(df, column_name:str, windows: Union[int, List[int]], suffix=None, last_rows:int=0):
     """
-    Computing the slope of fitted line.
+    Calculates the linear trends for a given column in a DataFrame.
+    Parameters:
+        df (DataFrame): The input DataFrame.
+        column_name (str): The name of the column to calculate linear trends for.
+        windows (Union[int, List[int]]): The window size(s) to use for calculating linear trends. 
+            If an integer is provided, the same window size will be used for all calculations. 
+            If a list of integers is provided, multiple window sizes will be used.
+        suffix (str, optional): The suffix to append to the column name in the output feature names. 
+            Defaults to None.
+        last_rows (int, optional): The number of last rows to aggregate when calculating linear trends. 
+            If set to 0, all rows will be used. Defaults to 0.
+    Returns:
+        List[str]: A list of feature names representing the calculated linear trends.
     """
     column = df[column_name]
 
@@ -154,7 +192,11 @@ def add_linear_trends(df, column_name:str, windows: Union[int, List[int]], suffi
 
 def slope_fn(x):
     """
-    Fit a linear regression model and return its slope
+    Calculate the slope of a linear regression line for the given data.
+    Parameters:
+    x (array-like): The input data.
+    Returns:
+    float: The slope of the linear regression line.
     """
     X_array = np.asarray(range(len(x)))
     y_array = x
@@ -174,6 +216,20 @@ def to_diff(sr):
     return 100 * sr.diff() / sr
 
 def _aggregate_last_rows(column, window, last_rows, fn, *args):
+    """
+    Aggregate the last rows of a column using a given function.
+
+    Parameters:
+        column (pd.Series): The column to aggregate.
+        window (int): The size of the window to consider for aggregation.
+        last_rows (int): The number of last rows to aggregate.
+        fn (function): The function to use for aggregation.
+        *args: Additional arguments to pass to the aggregation function.
+
+    Returns:
+        pd.Series: A series containing the aggregated values.
+
+    """
     length = len(column)
     values = [fn(column.iloc[-window - r: length - r].to_numpy(), *args) for r in range(last_rows)]
     feature = pd.Series(data=np.nan, index=column.index, dtype=float)
