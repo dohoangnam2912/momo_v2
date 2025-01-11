@@ -2,6 +2,7 @@ import pandas as pd
 from typing import Tuple
 from common.classifiers import *
 from common.gen_features import *
+from common.gen_features_agg import *
 from common.gen_labels import generate_labels
 from common.gen_signals import *
 from common.model_store import *
@@ -27,6 +28,16 @@ def generate_feature_set(df: pd.DataFrame, fs:dict, last_rows: int) -> Tuple[pd.
         print(f"Generating features with {generator}...")
         features = generate_features_talib(f_df, gen_config, last_rows=last_rows)
         print(f"Finished generating features with {generator}. Name of the columns: {features}")
+    elif generator == "log_diff":
+        features = to_log_diff(f_df, gen_config)
+    elif generator == 'shift':
+        features = shift(f_df, gen_config)
+    elif generator == 'body':
+        features = candle_body(f_df)
+    elif generator == 'z_score':
+        features = z_score(f_df)
+    elif generator == 'candle_pattern':
+        features = candle_pattern(f_df)
     # Labels
     elif generator == "label":
         f_df, features = generate_labels(f_df, gen_config)

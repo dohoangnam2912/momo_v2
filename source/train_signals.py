@@ -49,7 +49,6 @@ def main(config_file):
 
 
     print(f"Input data size {len(df)} records loaded.")
-    df[time_column] = pd.to_datetime(df[time_column].astype(float) / 1000, unit='s')
     df = df[-34561:-1]
     months_in_simulation = (df[time_column].iloc[-1] - df[time_column].iloc[0]) / timedelta(days=365/12)
     print(f"Months in simulation: {months_in_simulation:.2f} from {df[time_column].iloc[0]} to {df[time_column].iloc[-1]}")

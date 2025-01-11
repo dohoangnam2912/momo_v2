@@ -13,70 +13,8 @@ from lightgbm import LGBMClassifier, early_stopping, log_evaluation
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import train_test_split
 from bayes_opt import BayesianOptimization
-
-# def train_gb(df_X, df_y, model_config: dict):
-#     """
-#     Trains a gradient boosting model using LightGBM.
-#     Args:
-#         df_X (pandas.DataFrame): The input features dataframe.
-#         df_y (pandas.Series): The target variable series.
-#         model_config (dict): The configuration dictionary for the model.
-#     Returns:
-#         tuple: A tuple containing the trained model and the scaler used for feature scaling.
-#     """
-#     print(df_X.columns)
-    
-#     # Handle shifting of features
-#     shifts = model_config.get("train", {}).get("shifts", None)
-#     if shifts:
-#         max_shift = max(shifts)
-#         df_X = double_columns(df_X, shifts)
-#         df_X = df_X.iloc[max_shift:]
-#         df_y = df_y.iloc[max_shift:]
-
-#     # Scaling
-#     is_scale = model_config.get("train", {}).get("is_scale", False)
-#     if is_scale:
-#         scaler = StandardScaler()
-#         scaler.fit(df_X)
-#         X_train = scaler.transform(df_X)
-#     else:
-#         scaler = None
-#         X_train = df_X.values
-
-#     y_train = df_y.values
-
-#     # Split into training and validation sets
-#     X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, test_size=0.2, shuffle=False)
-
-#     # Model parameters with defaults
-#     params = model_config.get("params", {})
-#     lgbm_params = {
-#         'learning_rate': params.get("learning_rate", 0.1),
-#         'objective': params.get("objective", 'binary'),
-#         'max_depth': params.get("max_depth", -1),
-#         'num_leaves': 2**params.get("max_depth", -1) - 1,
-#         'lambda_l1': params.get("lambda_l1", 0.0),
-#         'lambda_l2': params.get("lambda_l2", 0.0),
-#         'scale_pos_weight': len(y_train) / (sum(y_train)),  # Handle imbalance
-#         'n_estimators': params.get("num_boost_round", 100),
-#         'num_boost_round': params.get("num_boost_round", 100),
-#     }
-
-#     # Train the model
-#     train_data = lgbm.Dataset(X_train, label=y_train, feature_name=df_X.columns.tolist())
-#     valid_data = lgbm.Dataset(X_valid, label=y_valid, feature_name=df_X.columns.tolist())
-
-#     model = lgbm.train(
-#         lgbm_params,
-#         train_set=train_data,
-#         valid_sets=[train_data, valid_data],
-#         callbacks=[
-#             lgbm.early_stopping(50),
-#         ]
-#     )
-
-#     return model, scaler
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import shap
 
 def train_gb(df_X, df_y, model_config: dict):
     """
@@ -121,7 +59,7 @@ def train_gb(df_X, df_y, model_config: dict):
             'num_leaves': int(num_leaves),
             'lambda_l1': lambda_l1,
             'lambda_l2': lambda_l2,
-            'scale_pos_weight': len(y_train) / (sum(y_train)),
+            'scale_pos_weight': (len(y_train) - sum(y_train)) / sum(y_train),
             'n_estimators': 100
         }
 
@@ -134,10 +72,10 @@ def train_gb(df_X, df_y, model_config: dict):
             params,
             train_set=train_data,
             valid_sets=[train_data, valid_data],
-            callbacks=[lgbm.early_stopping(50)]
+            callbacks=[lgbm.early_stopping(10)]
         )
 
-        # Evaluate using validation score (maximize F1 score or minimize log loss)
+        # Evaluate using validation score
         preds = model.predict(X_valid)
         preds_binary = (preds > 0.5).astype(int)
         score = -np.mean((y_valid - preds_binary) ** 2)  # Example: Negative MSE as the score to minimize
@@ -168,16 +106,34 @@ def train_gb(df_X, df_y, model_config: dict):
     final_train_data = lgbm.Dataset(X_train, label=y_train, feature_name=df_X.columns.tolist())
     final_valid_data = lgbm.Dataset(X_valid, label=y_valid, feature_name=df_X.columns.tolist())
 
+    eval_results = {}
     final_model = lgbm.train(
         best_params,
         train_set=final_train_data,
         valid_sets=[final_train_data, final_valid_data],
-        callbacks=[lgbm.early_stopping(50)]
+        callbacks=[lgbm.record_evaluation(eval_results), lgbm.early_stopping(10)]
     )
+
+    # Log loss per epoch
+    print("Loss per epoch:")
+    for dataset, metrics in eval_results.items():
+        print(f"{dataset}:")
+        for metric, values in metrics.items():
+            print(f"  {metric}: {values}")
+
+    # Generate and save confusion matrix
+    preds = final_model.predict(X_valid)
+    preds_binary = (preds > 0.5).astype(int)
+    cm = confusion_matrix(y_valid, preds_binary)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Class 0', 'Class 1'])
+    disp.plot(cmap='Blues', values_format='d')
+    plt.title(f'Confusion Matrix for Final Model')
+    plt.savefig('/home/yosakoi/Work/momo_v2/output/confusion_matrix_final_model.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    print("Confusion matrix plot saved as 'confusion_matrix_final_model.png'")
 
     print("Best Parameters:", best_params)
     return final_model, scaler
-
 
 def predict_gb(models: tuple, df_X_test, model_config: dict):
     """
@@ -251,7 +207,7 @@ def compute_scores(y_true, y_hat):
         dict: A dictionary containing the computed scores.
     """
     y_true = y_true.astype(int)
-    y_hat_class = np.where(y_hat.values > 0.5, 1, 0) 
+    y_hat_class = np.where(y_hat.values > 0.4, 1, 0) 
 
     try:
         auc = metrics.roc_auc_score(y_true, y_hat.fillna(0))

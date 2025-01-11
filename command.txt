@@ -1,5 +1,6 @@
 python3 -m source.features -c ./configs/config_v2.json
-python3 -m data.BTCUSDT.label
+python3 -m data_v2.expand
+python3 -m data_v2.label
 python3 -m source.train -c ./configs/config_v2.json
 python3 -m source.signals -c ./configs/config_v2.json
 python3 -m source.train_signals -c ./configs/config_v2.json

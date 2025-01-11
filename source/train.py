@@ -53,7 +53,7 @@ def main(config_file):
     
     for label in labels:
         df[label] = df[label].astype(int) # Changed for NN category
-    
+
     if label_horizon:
         df = df.head(-label_horizon)
 
@@ -110,9 +110,10 @@ def main(config_file):
         
         # Save the plot with a unique filename based on the model name
         filename = f'feature_importance_{model_name}.png'
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        filedir = f'/home/yosakoi/Work/momo_v2/output/{filename}'
+        plt.savefig(filedir, dpi=300, bbox_inches='tight')
         plt.close()
-        print(f"Feature importance plot saved as '{filename}'")
+        print(f"Feature importance plot saved as '{filedir}'")
 
 
     model_path = Path(App.config["model_folder"]) / symbol
@@ -133,7 +134,7 @@ def main(config_file):
     for score_colume_name, score in scores.items():
         lines.append(f"{score_colume_name}: {score}")
     
-    metrics_path = (model_path / 'metrics.txt').resolve()
+    metrics_path = ('/home/yosakoi/Work/momo_v2/output/metrics.txt')
     with open(metrics_path, 'w') as f:
         f.write('\n'.join(lines) + "\n")
 

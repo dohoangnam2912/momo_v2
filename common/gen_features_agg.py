@@ -209,8 +209,25 @@ def slope_fn(x):
 
     return slope
 
-def to_log_diff(sr):
-    return np.log(sr).diff
+def to_log_diff(df, config):
+    # Data preprocessing
+    column_names = config.get('columns')
+    features = []
+    for col in column_names:
+        df[f'{col}_log_diff'] = np.log(df[col].interpolate()).diff()
+        features.append(f'{col}_log_diff')
+    return features
+    
+def shift(df, config):
+    # Data preprocessing
+    column_names = config.get('columns')
+    shift = config.get('shift')
+    features = []
+    for col in column_names:
+        for s in shift:
+            df[f'{col}_shift_{s}'] = df[col].interpolate().shift(s)
+            features.append(f'{col}_shift_{s}')
+    return features
 
 def to_diff(sr):
     return 100 * sr.diff() / sr

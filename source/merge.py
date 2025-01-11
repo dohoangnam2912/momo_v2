@@ -78,11 +78,12 @@ def merge_data_sources(data_sources: list):
         elif df.index.name == time_column:
             pass
         else:
-            raise(f"Timestamp column is not available!")
+            raise ValueError("Timestamp column is not available!")
         
+        # Adding column prefixes for clarity (BTC or ETH)
         if ds['column_prefix']:
             df.columns = [
-                ds['column_prefix'] + "_" + col if not col.startwith(ds['column_prefix'] + "_") else col for col in df.columns 
+                ds['column_prefix'] + "_" + col if not col.startswith(ds['column_prefix'] + "_") else col for col in df.columns 
             ]
 
         ds["start"] = df.first_valid_index()
@@ -92,16 +93,27 @@ def merge_data_sources(data_sources: list):
     range_start = min([ds["start"] for ds in data_sources])
     range_end = min([ds["end"] for ds in data_sources]) 
 
-    print(range_start)
-    print(range_end)
+    print(f"Data Range: {range_start} to {range_end}")
     index = pd.date_range(range_start, range_end, freq=freq)
 
+    # Initialize an empty DataFrame with a datetime index
     df_out = pd.DataFrame(index=index)
     df_out.index.name = time_column
 
-    for ds in data_sources:
-        df_out = df_out.join(ds["df"])
+    # Perform merging with renamed columns for BTC and ETH
+    for i, ds in enumerate(data_sources):
+        prefix = 'BTC' if i == 0 else 'ETH'  # Assuming the order is BTC first, ETH second
+        try:
+            df_out = df_out.join(ds["df"], rsuffix=f'_{prefix}')
+        except ValueError:
+            ds["df"].columns = [f"{prefix}_{col}" for col in ds["df"].columns]
+            df_out = df_out.join(ds["df"])
+
+    # Rename columns specifically for BTC and ETH clarity
+    df_out.columns = df_out.columns.str.replace('left', 'BTC').str.replace('right', 'ETH')
+
     return df_out
+
 
 if __name__ == '__main__':
     main()

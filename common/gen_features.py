@@ -208,6 +208,19 @@ def generate_features_talib(df, config:dict, last_rows: int = 0):
                         'slowperiod': config.get("slow_period", 26),
                         'signalperiod': config.get("signal_period", 9)
                     }
+                elif func_name in ['CCI']:
+                    args = {
+                        'high': df['high'].interpolate(),
+                        'low': df['low'].interpolate(),
+                        'close': df['close'].interpolate(),
+                        'timeperiod': w
+                    }
+                elif func_name in ['OBV']:
+                    args = {
+                        'close': df['close'].interpolate(),
+                        'volume': df['volume'].interpolate(),
+                        'timeperiod': w
+                    }
                 if w:
                     args['timeperiod'] = w
                 if w == 1 and len(columns) == 1 :
@@ -245,7 +258,7 @@ def generate_features_talib(df, config:dict, last_rows: int = 0):
 
             # fn_outs.append(out)
 
-            if isinstance(out, tuple):
+            if isinstance(out, tuple) or isinstance(out, list):
                 for i, element in enumerate(out):
                     element.name = f"{out_name}_{i}"  # Assign a unique name for each element
                     fn_outs.append(element)
@@ -317,3 +330,21 @@ def _convert_to_relative(fn_outs: list, relative_base, relative_function, percen
         relative_outputs.append(relative_output)
         
     return relative_outputs
+
+def candle_body(df):
+    # Data preprocessing
+    df['candle_body'] = (df['close'].interpolate() - df['open'].interpolate()) / (df['open'].interpolate() + 1e-6)
+    return ['candle_body']
+
+def z_score(df):
+    df['z_score'] = (df['close'].interpolate() - df['close'].interpolate().rolling(20).mean()) / df['close'].interpolate().rolling(20).std()
+    return ['z_score']
+
+def candle_pattern(df):
+    import talib
+    df['doji'] = talib.CDLDOJI(df['open'].interpolate(), df['high'].interpolate(), df['low'].interpolate(), df['close'].interpolate())
+    df['hammer'] = talib.CDLHAMMER(df['open'].interpolate(), df['high'].interpolate(), df['low'].interpolate(), df['close'].interpolate())
+    df['shooting_star'] = talib.CDLSHOOTINGSTAR(df['open'].interpolate(), df['high'].interpolate(), df['low'].interpolate(), df['close'].interpolate())
+    df['bullish_engulfing'] = talib.CDLENGULFING(df['open'].interpolate(), df['high'].interpolate(), df['low'].interpolate(), df['close'].interpolate())
+    df['bearish_engulfing'] = talib.CDLENGULFING(df['open'].interpolate(), df['high'].interpolate(), df['low'].interpolate(), df['close'].interpolate()) * -1  # Invert for bearish
+    return ['doji', 'hammer', 'shooting_star', 'bullish_engulfing', 'bearish_engulfing']
